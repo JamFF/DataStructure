@@ -12,54 +12,71 @@
 using namespace std;
 
 // 分配capacity个AnyObject指针大小的内存
-static AnyObject *allocMemoryByCapacity(Array *arr) {
-    return static_cast<AnyObject *>(malloc(sizeof(AnyObject) * arr->capacity));
+static AnyObject *allocMemoryByCapacity(int capacity) {
+    return static_cast<AnyObject *>(malloc(capacity * sizeof(AnyObject)));
 }
 
-// TODO 我增加的释放People的方法，是否有必要
+// 释放People
 static void destroyPeople(People *pPeople) {
+    if (pPeople == nullptr) {
+        return;
+    }
     OBJRELEASE(pPeople->age);
     OBJRELEASE(pPeople->name);
     OBJRELEASE(pPeople);
 }
 
+/**
+ * 数组扩容
+ * @param array
+ */
+static void expandArray(Array *array) {
+    // 容量翻倍
+    array->capacity *= 2;
+    cout << "需要扩容 capacity = " << array->capacity << endl;
+    AnyObject *oldValue = array->value;
+    // 由于capacity增加，重新开辟一块大内存
+    array->value = allocMemoryByCapacity(array->capacity);
+    // 将老数据，拷贝到新的内存上
+    memcpy(array->value, oldValue, array->length * sizeof(AnyObject));
+    // 循环释放老的People内存（包括里面的name和age）
+    for (int i = 0; i < array->length; ++i) {
+        auto *pPeople = reinterpret_cast<People *>(oldValue);
+        // 这里直接free，不要用OBJRELEASE，因为retainCount已经copy到新的内存上，这里操作retainCount没有意义
+        if (pPeople != nullptr) {
+            if (pPeople->name != nullptr) {
+                free(pPeople->name);
+                pPeople->name = nullptr;
+            }
+            if (pPeople->age != nullptr) {
+                free(pPeople->age);
+                pPeople->age = nullptr;
+            }
+            free(pPeople);
+            pPeople = nullptr;
+        }
+    }
+    // 最后释放People的二级指针
+    free(oldValue);
+    oldValue = nullptr;
+}
+
+// 初始化数组
 Array *newArray() {
     auto *pArray = static_cast<Array *>(malloc(sizeof(Array)));
     pArray->length = 0;
     pArray->capacity = 32;// 初始设置为32
-    pArray->value = allocMemoryByCapacity(pArray);// 二级指针
+    pArray->value = allocMemoryByCapacity(pArray->capacity);// 二级指针
     return pArray;
 }
 
 // 增加元素
 void addElement(Array *array, AnyObject value) {
     if (array->length >= array->capacity) {
-        // 扩容
-        array->capacity *= 2;
-        AnyObject *oldValue = array->value;
-        // TODO 参数1和参数2是同块内存地址吧？不会修改了capacity的值，value也跟着变动吧？
-        memcpy(array->value, oldValue, array->length * sizeof(AnyObject));
-        // TODO 释放也有问题，oldValue里面的name和age都是结构体也需要释放
-        free(oldValue);
+        expandArray(array);
     }
-    // TODO 我的扩容思路，如下，打开注释查看：
-//    if (array->length >= array->capacity) {
-//        // 扩容
-//        array->capacity *= 2;
-//        AnyObject *oldValue = array->value;
-//        // 由于capacity翻倍了，重新开辟一块内存
-//        array->value = allocMemoryByCapacity(array);
-//        // 将老数据，拷贝到新的内存上
-//        memcpy(array->value, oldValue, array->length * sizeof(AnyObject));
-//        // 循环释放老的People内存（包括里面的name和age）
-//        for (int i = 0; i < array->length; ++i) {
-//            destroyPeople(reinterpret_cast<People *>(oldValue));
-//        }
-//        // 最后释放People的二级内存
-//        free(oldValue);
-//    }
 
-    // TODO 在value创建时计数+1了，add时也要计数+1吗？
+    // 在value创建时计数+1了，这里增加也模拟计数+1
     OBJRETAIN(value);
     array->value[array->length] = value;
     array->length++;
@@ -68,8 +85,6 @@ void addElement(Array *array, AnyObject value) {
 // 删除元素
 Array *removeIndexAt(Array *array, int index) {
     assert(index >= 0 && index < array->length);  // 断言，防止越界
-    // TODO 这里释放不彻底吧，应该用我的destroyPeople方法
-//    OBJRELEASE(getValueIndexAt(array, index));
     destroyPeople(reinterpret_cast<People *>(getValueIndexAt(array, index)));
     for (int i = index; i < array->length - 1; ++i) {
         array->value[i] = array->value[i + 1];
@@ -81,11 +96,7 @@ Array *removeIndexAt(Array *array, int index) {
 // 在指定位置增加元素
 Array *insertIndexAt(Array *array, AnyObject value, int index) {
     if (array->length >= array->capacity) {
-        // 扩容
-        array->capacity *= 2;
-        AnyObject *oldValue = array->value;
-        memcpy(array->value, oldValue, array->length * sizeof(AnyObject));
-        free(oldValue);
+        expandArray(array);
     }
     // 将元素后移
     for (int i = array->length; i > index - 1; --i) {
@@ -93,11 +104,13 @@ Array *insertIndexAt(Array *array, AnyObject value, int index) {
     }
     // 插入指定位置
     array->value[index] = value;
+    // 在value创建时计数+1了，这里增加也模拟计数+1
     OBJRETAIN(value);
     array->length++;
+    return array;
 }
 
-// 获取某个元素
+// 获取某个位置的元素
 AnyObject getValueIndexAt(Array *array, int index) {
     assert(index >= 0 && index < array->length);
     return array->value[index];
@@ -108,16 +121,20 @@ int getArrayLength(Array *array) {
     return array->length;
 }
 
+// 释放数组内存
 void destroyArray(Array *array) {
-    // TODO 内部的name和age都是结构体还没被销毁，是不是需要for循环释放
+    // 内部的name和age都是结构体还没被销毁，需要for循环释放
     for (int i = 0; i < array->length; ++i) {
         destroyPeople(reinterpret_cast<People *>(array->value[i]));
     }
     free(array->value);
+    array->value = nullptr;
     free(array);
-    cout << "数组被销毁" << endl;
+    array = nullptr;
+    cout << "数组已销毁释放" << endl;
 }
 
+// 打印Array内容
 void printArray(Array *array) {
     for (int i = 0; i < array->length; i++) {
         cout << "位置：" << i << "，";
@@ -129,7 +146,7 @@ void printArray(Array *array) {
 int main() {
     Array *arr = newArray();
 
-    cout << "初始化11个People" << endl;
+    cout << "初始化10个People" << endl;
     People *p0 = newPeople(newString("A"), newInteger(20));
     People *p1 = newPeople(newString("B"), newInteger(16));
     People *p2 = newPeople(newString("C"), newInteger(17));
@@ -142,8 +159,8 @@ int main() {
     People *p9 = newPeople(newString("J"), newInteger(22));
 
     cout << "\n增加10个People元素" << endl;
-    // TODO 设计思想是什么，添加的元素是People指针类型，Array中设计为Object的指针类型？
-    // TODO 这种设计的前提是，机构体中第一个字段都是int，并且都为内存计数器吗？
+    // 设计思想类似于继承，Array中设计为Object指针类型，添加的是People指针类型，都是指针类型，占用同样大小内存
+    // 这种设计的前提是，结构体中都有相同字段，retainCount，所以可以强转后取出进行操作，而不出现问题
     addElement(arr, (Object *) p0);
     addElement(arr, (Object *) p1);
     addElement(arr, (Object *) p2);
@@ -155,7 +172,7 @@ int main() {
     addElement(arr, (Object *) p8);
     addElement(arr, (Object *) p9);
 
-    // TODO 为什么要释放内存？是因为newPeople和addElement时，计数器增为2，这里统一减1，保证后面回收吗？
+    // 释放内存，newPeople和addElement，操作两次，计数器增为2，这里模拟释放1次，保证后面回收
     cout << "\n释放 p0-p9" << endl;
     OBJRELEASE(p0);
     OBJRELEASE(p1);
@@ -181,12 +198,12 @@ int main() {
     insertIndexAt(arr, (Object *) p10, 4);
     printArray(arr);
 
-    // TODO 为什么要释放内存？是因为newPeople和insertIndexAt时，计数器增为2，这里统一减1，保证后面回收吗？
+    // 释放内存，newPeople和addElement，操作两次，计数器增为2，这里模拟释放1次，保证后面回收
     cout << "\n释放 p10" << endl;
     OBJRELEASE((Object *) p10);
 
     int index = 4;
-    cout << "\n查找位置" << index << "处的元素";
+    cout << "\n查找位置" << index << "处的元素，";
     cout << "位置：" << index << "，";
     cout << "姓名：" << getStringValue(getName(reinterpret_cast<People *>( getValueIndexAt(arr, index)))) << "，";
     cout << "年龄：" << getIntegerValue(getAge(reinterpret_cast<People *>(getValueIndexAt(arr, index)))) << "\n" << endl;

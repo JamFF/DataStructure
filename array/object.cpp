@@ -14,12 +14,15 @@ void objectRetain(Object *obj) {
 
 // 释放一次，计数-1
 void objectRelease(Object *obj) {
+    if (obj == nullptr) {
+        return;
+    }
     obj->retainCount--;
-    // TODO 要先打印，再释放，源代码错误
     cout << obj << "，retain计数-1 = " << obj->retainCount << endl;
     if (obj->retainCount <= 0) {
         cout << obj << "，free obj" << endl;
         free(obj);
+        obj = nullptr;
     }
 }
 

@@ -7,7 +7,7 @@
 
 People *newPeople(String *name, Integer *age) {
     auto *pPeople = static_cast<People *>(malloc(sizeof(People)));
-    pPeople->retainCount = 0;// TODO 新增retainCount的初始化
+    pPeople->retainCount = 0;// retainCount的初始化
     pPeople->age = age;
     pPeople->name = name;
 //    objectRetain(reinterpret_cast<Object *>(pPeople));

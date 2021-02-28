@@ -13,8 +13,7 @@ typedef struct Object {
     int retainCount;
 } Object;
 
-// 宏定义方法 方便书写 宏函数
-// TODO 目的是不是也为了减少后面IDE进行指针的类型检查啊
+// 宏定义方法，宏函数，方便书写。这样也可以减少IDE进行指针的类型检查，可传入任意指针类型
 #define OBJRETAIN(obj) objectRetain((Object*)obj)
 #define OBJRELEASE(obj) objectRelease((Object*)obj)
 #define GETRETAINCOUNT(obj) getRetainCount((Object*)obj)

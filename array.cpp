@@ -52,5 +52,6 @@ int main() {
     deleteElement(pMyArray, 2);
 
     free(pMyArray);
+    pMyArray = nullptr;
     return 0;
 }
